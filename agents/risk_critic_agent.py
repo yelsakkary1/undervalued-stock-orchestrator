@@ -54,10 +54,15 @@ TOOLS = [
                 "ticker": {"type": "string"},
                 "verdict": {"type": "string", "enum": ["approved", "approved_with_caution", "rejected"]},
                 "hard_veto_triggered": {"type": "boolean"},
+                "veto_category": {
+                    "type": "string",
+                    "enum": ["going_concern", "restatement", "covenant_breach", "litigation_or_regulatory", "none"],
+                    "description": "Which solvency-grade problem justifies a rejection. 'none' means you found no such problem -- which is the correct answer for a stock that is merely expensive, volatile, or stretched, however strongly you feel about it. A rejection with category 'none' will be downgraded to approved_with_caution automatically.",
+                },
                 "veto_reasons": {"type": "array", "items": {"type": "string"}},
                 "risk_flags": {"type": "array", "items": {"type": "string"}},
             },
-            "required": ["ticker", "verdict", "hard_veto_triggered", "veto_reasons", "risk_flags"],
+            "required": ["ticker", "verdict", "hard_veto_triggered", "veto_category", "veto_reasons", "risk_flags"],
         },
     },
 ]
@@ -76,8 +81,12 @@ SYSTEM_PROMPT = (
     "is a risk flag, never a rejection.\n\n"
     "Reserve 'rejected' for risk-specific grounds: going-concern language, "
     "financial restatements, debt covenant breach risk, or litigation and "
-    "regulatory action that threatens the business. Set "
-    "hard_veto_triggered only for those. Elevated short interest, "
+    "regulatory action that threatens the business. Name which one in "
+    "veto_category. If none of them applies, the category is 'none' and "
+    "the candidate is not rejected, however expensive it looks -- a "
+    "rejection without a named cause is downgraded automatically, so "
+    "spending one costs you the flag you could have raised instead. "
+    "Elevated short interest, "
     "concentration, high beta, a full multiple and a stretched entry point "
     "are soft flags -- surface them, and reach for "
     "'approved_with_caution' when they stack up, so the portfolio stage "
@@ -86,6 +95,50 @@ SYSTEM_PROMPT = (
     "concrete, falsifiable reasons. When ready, call "
     "submit_risk_assessment."
 )
+
+
+HARD_VETO_CATEGORIES = {
+    "going_concern",
+    "restatement",
+    "covenant_breach",
+    "litigation_or_regulatory",
+}
+
+
+def enforce_veto_contract(assessment: dict) -> dict:
+    """Downgrade a rejection that cites no solvency-grade cause.
+
+    The system prompt tells this agent that a rich multiple is a flag and
+    never a rejection, and that hard_veto_triggered is reserved for
+    going-concern language, restatements, covenant breaches and legal
+    action. It was observed ignoring both instructions on a live run --
+    rejecting AMD with hard_veto_triggered set, on grounds that were
+    entirely valuation and volatility, for a name the fundamentals agent
+    had already marked overvalued. Same concern, counted twice, at the one
+    severity that stops a candidate dead.
+
+    Asking harder was not the fix. The instruction is a requirement, so it
+    lives here instead: the model still decides whether a solvency-grade
+    problem exists, but it cannot spend a veto without naming which one.
+    The downgrade is recorded, not silent -- a rejection that quietly
+    became a caution would hide the disagreement worth reading.
+    """
+    category = assessment.get("veto_category")
+    rejecting = assessment.get("verdict") == "rejected" or assessment.get("hard_veto_triggered")
+
+    if not rejecting or category in HARD_VETO_CATEGORIES:
+        return assessment
+
+    reasons = assessment.get("veto_reasons") or []
+    assessment["verdict"] = "approved_with_caution"
+    assessment["hard_veto_triggered"] = False
+    assessment["veto_reasons"] = []
+    assessment["risk_flags"] = list(assessment.get("risk_flags") or []) + reasons
+    assessment.setdefault("overrides", []).append(
+        "rejection downgraded to approved_with_caution: no solvency-grade "
+        f"cause named (veto_category={category!r}). Stated reasons kept as risk flags."
+    )
+    return assessment
 
 
 def run_risk_critic(fundamentals_verdict: dict = None, technical_verdict: dict = None, ticker: str = None) -> dict:
@@ -111,13 +164,14 @@ def run_risk_critic(fundamentals_verdict: dict = None, technical_verdict: dict =
             f"red flags before submitting your assessment."
         )
 
-    return run_agent(
+    assessment = run_agent(
         system_prompt=SYSTEM_PROMPT,
         tools=TOOLS,
         tool_functions=TOOL_FUNCTIONS,
         terminal_tool="submit_risk_assessment",
         user_message=prompt,
     )
+    return enforce_veto_contract(assessment)
 
 
 if __name__ == "__main__":

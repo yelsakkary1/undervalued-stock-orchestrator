@@ -73,18 +73,30 @@ Advisory judgement belongs to the model. Anything that must hold *regardless of 
 
 | Enforced in code | Left to the model |
 |---|---|
+| A rejection requires a named solvency-grade cause | Whether such a cause exists |
 | Risk-critic vetoes filter candidates before the portfolio agent runs | Which names to hold |
 | Position cap (35%), sector cap (60%) | Position sizing within the caps |
 | Allocations always total 100% | How much cash to carry |
 | Rejected tickers stripped if reinstated | The thesis for each holding |
 
-This isn't theoretical caution. The portfolio agent has been observed, against the live API, doing all three of these:
+This isn't theoretical caution. Observed against the live API:
 
-- returning `positions` as bare ticker strings instead of objects
-- omitting `concentration_notes` despite it being a `required` field
-- listing a risk-rejected ticker among its holdings
+- the portfolio agent returned `positions` as bare ticker strings instead of objects
+- it omitted `concentration_notes` despite it being a `required` field
+- it listed a risk-rejected ticker among its holdings
+- the risk critic rejected a candidate on valuation grounds, with `hard_veto_triggered` set
 
-Each is caught by a code-side guard. A schema is a strong instruction, not an enforced contract.
+The last one is the instructive one. Its prompt says, in as many words, that a rich multiple is a flag and *never* a rejection, and that `hard_veto_triggered` is reserved for going-concern language, restatements, covenant breaches and legal action. It rejected AMD anyway, citing a 129x P/E, a low FCF yield and high beta — none of them a solvency question, and all of them concerns the fundamentals agent had already priced into an `overvalued` verdict. The same objection, counted twice, at the one severity that stops a candidate dead. On the same prompt it had produced three correct `approved_with_caution` verdicts during a sector scan an hour earlier.
+
+Asking more firmly was not the fix. `submit_risk_assessment` now requires a `veto_category` naming which solvency-grade problem applies, and `enforce_veto_contract` downgrades any rejection whose category is `none` to `approved_with_caution`, keeping the stated reasons as risk flags and recording the override:
+
+```json
+"overrides": ["rejection downgraded to approved_with_caution: no solvency-grade cause named (veto_category='none'). Stated reasons kept as risk flags."]
+```
+
+The model still decides whether a solvency-grade problem exists. It just can't spend a veto without naming one. The signal now reaches the portfolio stage to be sized down, instead of being destroyed upstream.
+
+A schema is a strong instruction, not an enforced contract.
 
 Every correction the code makes is recorded in `adjustments` rather than applied silently — a rewritten allocation you can't see is worse than one you can argue with.
 
@@ -104,7 +116,7 @@ Survivors are tagged with the basis they cleared on, so nothing downstream mista
 
 The portfolio agent reads that tag and sizes relative-basis candidates more conservatively.
 
-A related fix: the risk critic had been rejecting candidates on valuation grounds — re-deciding a question the fundamentals agent had already answered, whose verdict was sitting in its own prompt. Double-counting the same concern rejected everything in an expensive market. Its remit is now explicitly risk-only; a rich multiple is a flag, never a rejection.
+The scan gate was only half the problem. The risk critic was independently rejecting candidates on valuation grounds — re-deciding a question the fundamentals agent had already answered, whose verdict was sitting in its own prompt — so names that survived the gate died one stage later for the same reason. Narrowing its remit in the prompt was not enough on its own; see the veto contract in decision 2 for what actually made it hold.
 
 ---
 
@@ -141,23 +153,27 @@ The 62% cash is the system working. All three candidates cleared on a *relative*
 ## Running it
 
 ```bash
-python -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
+python3 -m venv venv
+./venv/bin/pip install -r requirements.txt
 cp .env.example .env        # add your ANTHROPIC_API_KEY
 ```
 
+Calling `./venv/bin/python` directly avoids needing to activate anything — and macOS ships no bare `python`, only `python3`, so an unactivated `python …` fails there.
+
 ```bash
-python coordinator.py "Is AMD a good long-term buy?"
-python coordinator.py "Find me undervalued semiconductor stocks"
-python coordinator.py "What are the risks with INTC?"
-python coordinator.py "Is AMD a good buy?" --no-synthesis
+./venv/bin/python coordinator.py "Is AMD a good long-term buy?"
+./venv/bin/python coordinator.py "Find me undervalued semiconductor stocks"
+./venv/bin/python coordinator.py "What are the risks with INTC?"
+./venv/bin/python coordinator.py "Is AMD a good buy?" --no-synthesis
 ```
+
+Add `-u` (`./venv/bin/python -u coordinator.py …`) to watch progress live when redirecting output to a file — otherwise stdout is block-buffered and nothing appears until the run ends.
 
 Each agent also runs standalone:
 
 ```bash
-python agents/fundamentals_agent.py NVDA
-python agents/portfolio_agent.py NVDA AMD JPM
+./venv/bin/python agents/fundamentals_agent.py NVDA
+./venv/bin/python agents/portfolio_agent.py NVDA AMD JPM
 ```
 
 Defaults to `claude-haiku-4-5`; override with `CLAUDE_MODEL` in `.env`.
@@ -165,16 +181,17 @@ Defaults to `claude-haiku-4-5`; override with `CLAUDE_MODEL` in `.env`.
 ## Tests
 
 ```bash
-pip install -r requirements-dev.txt
-pytest
+./venv/bin/pip install -r requirements-dev.txt
+./venv/bin/python -m pytest
 ```
 
-69 tests, ~0.5s, entirely offline — no API key, no network. The agent loop is driven by a scripted stub client and the data tools are stubbed. A suite that needs a funded API key to tell you whether the allocation maths is right is a suite you stop running.
+86 tests, ~0.8s, entirely offline — no API key, no network. The agent loop is driven by a scripted stub client and the data tools are stubbed. A suite that needs a funded API key to tell you whether the allocation maths is right is a suite you stop running.
 
 Coverage is weighted toward failure paths, because those are the ones you don't notice breaking:
 
 - **`test_agent_loop.py`** — `end_turn` recovery, iteration caps, tool exceptions, NaN sanitisation
 - **`test_portfolio_agent.py`** — veto enforcement, position/sector caps, allocation normalisation, malformed model output
+- **`test_risk_critic.py`** — the veto contract: unjustified rejections downgraded, genuine ones preserved
 - **`test_coordinator.py`** — routing decisions, shortlist ranking, envelope consistency
 
 ## Layout
