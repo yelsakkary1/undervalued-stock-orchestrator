@@ -305,3 +305,73 @@ class TestSummaryReconciliation:
         out = run_portfolio_agent({t: candidate(t, approved(t)) for t in ("JPM", "BAC")})
         assert out["adjustments"] == []
         assert out["summary"] == "A measured book."
+
+
+class TestPositionsAsAString:
+    """The model serialised its positions array as JSON text instead of
+    returning an array. The loop then walked the string character by
+    character, turning every brace, quote and digit into a "position" --
+    each looked up as a ticker against a live API. ~150 bogus HTTP calls."""
+
+    JSON_TEXT = '[{"ticker": "JPM", "allocation_pct": 35, "conviction": "high", "thesis": "x", "key_risks": []}]'
+
+    def test_a_json_string_is_parsed_not_iterated(self):
+        positions, notes = normalise_positions(self.JSON_TEXT)
+        assert [p["ticker"] for p in positions] == ["JPM"]
+        assert any("JSON string" in n for n in notes)
+
+    def test_no_single_character_positions_survive(self):
+        """The signature of the bug: tickers like '{', '"', ':' , '1'."""
+        positions, _ = normalise_positions(self.JSON_TEXT)
+        assert not any(len(p["ticker"]) == 1 for p in positions)
+
+    def test_unparseable_string_yields_nothing(self):
+        positions, notes = normalise_positions("not json at all, just prose")
+        assert positions == []
+        assert any("unparseable" in n for n in notes)
+
+    @pytest.mark.parametrize("raw", [42, 3.5, True, {"ticker": "JPM"}])
+    def test_non_list_payloads_are_discarded(self, raw):
+        positions, notes = normalise_positions(raw)
+        assert positions == []
+        assert notes
+
+    def test_none_is_simply_empty(self):
+        assert normalise_positions(None) == ([], [])
+
+
+class TestTickerPlausibility:
+    """Nothing downstream should be asking Yahoo about a lone brace."""
+
+    @pytest.mark.parametrize("junk", ["{", '"', ":", ",", "1", "%", ";", "", "   ", "\n"])
+    def test_garbage_never_becomes_a_position(self, junk):
+        positions, notes = normalise_positions([junk])
+        assert positions == []
+        assert notes
+
+    @pytest.mark.parametrize("junk", ["{", "%", "1"])
+    def test_garbage_in_a_dict_is_dropped_too(self, junk):
+        positions, notes = normalise_positions([{"ticker": junk, "allocation_pct": 10}])
+        assert positions == []
+        assert any("implausible" in n for n in notes)
+
+    @pytest.mark.parametrize("ticker", ["JPM", "BAC", "BRK.B", "RDS-A", "F", "GOOGL"])
+    def test_real_tickers_pass(self, ticker):
+        positions, _ = normalise_positions([{"ticker": ticker, "allocation_pct": 10}])
+        assert [p["ticker"] for p in positions] == [ticker]
+
+
+class TestNoNetworkOnMalformedOutput:
+    """The failure was not just noise -- it was ~150 live HTTP requests."""
+
+    def test_sector_lookup_is_never_called_for_garbage(self, monkeypatch, approved):
+        looked_up = []
+        monkeypatch.setattr(pa, "get_sector_profile",
+                            lambda ticker: looked_up.append(ticker) or {"sector": "X"})
+        monkeypatch.setattr(pa, "run_agent", lambda **kw: {
+            "positions": '[{"ticker": "JPM", "allocation_pct": 35}]',
+            "cash_pct": 65.0, "excluded": [], "concentration_notes": [], "summary": "s",
+        })
+        out = run_portfolio_agent({"JPM": candidate("JPM", approved("JPM"))})
+        assert looked_up == ["JPM"], f"looked up garbage: {looked_up}"
+        assert total(out) == 100.0

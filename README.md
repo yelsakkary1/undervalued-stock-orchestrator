@@ -84,9 +84,12 @@ This isn't theoretical caution. Observed against the live API:
 - the portfolio agent returned `positions` as bare ticker strings instead of objects
 - it omitted `concentration_notes` despite it being a `required` field
 - it listed a risk-rejected ticker among its holdings
+- it serialised `positions` as a JSON *string* instead of an array
 - the risk critic rejected a candidate on valuation grounds, with `hard_veto_triggered` set
 
-The last one is the instructive one. Its prompt says, in as many words, that a rich multiple is a flag and *never* a rejection, and that `hard_veto_triggered` is reserved for going-concern language, restatements, covenant breaches and legal action. It rejected AMD anyway, citing a 129x P/E, a low FCF yield and high beta — none of them a solvency question, and all of them concerns the fundamentals agent had already priced into an `overvalued` verdict. The same objection, counted twice, at the one severity that stops a candidate dead. On the same prompt it had produced three correct `approved_with_caution` verdicts during a sector scan an hour earlier.
+The string-instead-of-array case is worth dwelling on, because the consequence was not a bad answer but a bad *action*: the normalising code iterated the string character by character, turned every brace, quote and digit into a position, and sent each one to Yahoo Finance as a ticker lookup — around 150 failed HTTP requests from one malformed field. Guards now reject a non-list payload outright and screen every symbol against a plausibility pattern before anything reaches the network. Validate at the boundary, not after the side effects.
+
+The risk-critic case is the other instructive one. Its prompt says, in as many words, that a rich multiple is a flag and *never* a rejection, and that `hard_veto_triggered` is reserved for going-concern language, restatements, covenant breaches and legal action. It rejected AMD anyway, citing a 129x P/E, a low FCF yield and high beta — none of them a solvency question, and all of them concerns the fundamentals agent had already priced into an `overvalued` verdict. The same objection, counted twice, at the one severity that stops a candidate dead. On the same prompt it had produced three correct `approved_with_caution` verdicts during a sector scan an hour earlier.
 
 Asking more firmly was not the fix. `submit_risk_assessment` now requires a `veto_category` naming which solvency-grade problem applies, and `enforce_veto_contract` downgrades any rejection whose category is `none` to `approved_with_caution`, keeping the stated reasons as risk flags and recording the override:
 
@@ -193,7 +196,7 @@ Defaults to `claude-haiku-4-5`; override with `CLAUDE_MODEL` in `.env`.
 ./venv/bin/python -m pytest
 ```
 
-95 tests, ~0.5s, entirely offline — no API key, no network. The agent loop is driven by a scripted stub client and the data tools are stubbed. A suite that needs a funded API key to tell you whether the allocation maths is right is a suite you stop running.
+123 tests, ~0.8s, entirely offline — no API key, no network. The agent loop is driven by a scripted stub client and the data tools are stubbed. A suite that needs a funded API key to tell you whether the allocation maths is right is a suite you stop running.
 
 Coverage is weighted toward failure paths, because those are the ones you don't notice breaking:
 

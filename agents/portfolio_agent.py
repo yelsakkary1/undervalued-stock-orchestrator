@@ -22,6 +22,7 @@ hold regardless of how persuasive the reasoning sounds goes in Python.
 """
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -166,6 +167,19 @@ def partition_candidates(results: dict) -> tuple:
     return eligible, blocked
 
 
+TICKER_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9.\-]{0,9}$")
+
+
+def _looks_like_ticker(value) -> bool:
+    """Cheap sanity check before anything reaches the network.
+
+    Nothing downstream should be asking Yahoo about a lone brace or a
+    percent sign. Rejecting implausible symbols here keeps one malformed
+    payload from turning into a hundred failed HTTP requests.
+    """
+    return isinstance(value, str) and bool(TICKER_PATTERN.match(value.strip()))
+
+
 def normalise_positions(raw) -> tuple:
     """Coerce the model's positions into the shape the rest of the code expects.
 
@@ -180,8 +194,34 @@ def normalise_positions(raw) -> tuple:
     """
     positions, notes = [], []
 
-    for entry in raw or []:
+    # A bare string here means the model serialised its positions array as
+    # JSON text instead of returning an array. Falling through to the loop
+    # would iterate it character by character, turning every brace, quote
+    # and digit into a "position" -- each of which is then looked up as a
+    # ticker against a live API. Observed once; roughly 150 bogus network
+    # calls before the run finished.
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except (TypeError, ValueError):
+            parsed = None
+        if isinstance(parsed, list):
+            notes.append("positions arrived as a JSON string -- parsed back into a list")
+            raw = parsed
+        else:
+            return [], [f"discarded unparseable positions payload: {raw[:60]!r}"]
+
+    if raw is None:
+        return [], []
+
+    if not isinstance(raw, (list, tuple)):
+        return [], [f"discarded positions payload of type {type(raw).__name__}"]
+
+    for entry in raw:
         if isinstance(entry, str):
+            if not _looks_like_ticker(entry):
+                notes.append(f"discarded implausible ticker: {entry!r}")
+                continue
             positions.append({
                 "ticker": entry,
                 "allocation_pct": 0.0,
@@ -194,6 +234,10 @@ def normalise_positions(raw) -> tuple:
 
         if not isinstance(entry, dict) or not entry.get("ticker"):
             notes.append(f"discarded malformed position entry: {entry!r}")
+            continue
+
+        if not _looks_like_ticker(entry["ticker"]):
+            notes.append(f"discarded position with implausible ticker: {entry['ticker']!r}")
             continue
 
         position = dict(entry)
