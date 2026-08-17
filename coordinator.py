@@ -241,7 +241,12 @@ def run_orchestrator(query: str, synthesise: bool = True) -> dict:
     portfolio = None
     if synthesise and plan["query_type"] != "risk_only":
         print("--- portfolio synthesis ---")
-        portfolio = run_portfolio_agent(results)
+        # the portfolio agent cannot see the query, so what the coordinator
+        # knows about the request has to be handed over explicitly
+        portfolio = run_portfolio_agent(results, mandate={
+            "query_type": plan["query_type"],
+            "sector": plan.get("sector"),
+        })
 
     return {
         "query": query,

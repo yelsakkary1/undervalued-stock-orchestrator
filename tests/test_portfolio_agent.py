@@ -226,3 +226,82 @@ class TestRunPortfolioAgent:
         assert total(out) == 100.0
         assert out["concentration_notes"] == []
         assert any("bare ticker" in a for a in out["adjustments"])
+
+
+class TestSectorMandate:
+    """A sector scan returns one sector by construction. Without being told
+    that was the request, this agent reads its own shortlist as 100%
+    concentrated and declines the whole book -- correct diversification
+    logic applied to a question that was never about diversification."""
+
+    @pytest.fixture(autouse=True)
+    def _stub_sector(self, monkeypatch):
+        monkeypatch.setattr(pa, "get_sector_profile", lambda ticker: {"sector": "Financial Services"})
+
+    def _run(self, monkeypatch, mandate, approved):
+        monkeypatch.setattr(pa, "run_agent", lambda **kw: {
+            "positions": [pos("BAC", 30.0), pos("JPM", 30.0), pos("WFC", 30.0)],
+            "cash_pct": 10.0, "excluded": [], "concentration_notes": [], "summary": "s",
+        })
+        results = {t: candidate(t, approved(t)) for t in ("BAC", "JPM", "WFC")}
+        return run_portfolio_agent(results, mandate=mandate)
+
+    def test_sector_cap_is_waived_for_a_sector_scan(self, monkeypatch, approved):
+        out = self._run(monkeypatch, {"query_type": "sector_scan", "sector": "bank"}, approved)
+        assert not any("sector limit" in a for a in out["adjustments"])
+        assert sum(p["allocation_pct"] for p in out["positions"]) == 90.0
+
+    def test_sector_cap_still_applies_without_a_sector_mandate(self, monkeypatch, approved):
+        out = self._run(monkeypatch, None, approved)
+        assert any("sector limit" in a for a in out["adjustments"])
+
+    def test_single_ticker_mandate_keeps_the_cap(self, monkeypatch, approved):
+        out = self._run(monkeypatch, {"query_type": "single_ticker", "sector": None}, approved)
+        assert any("sector limit" in a for a in out["adjustments"])
+
+    def test_the_mandate_reaches_the_model(self, monkeypatch, approved):
+        seen = {}
+        monkeypatch.setattr(pa, "run_agent", lambda **kw: seen.update(kw) or {
+            "positions": [], "cash_pct": 100.0, "excluded": [],
+            "concentration_notes": [], "summary": "s",
+        })
+        run_portfolio_agent({"BAC": candidate("BAC", approved("BAC"))},
+                            mandate={"query_type": "sector_scan", "sector": "banking"})
+        assert "banking" in seen["user_message"]
+        assert "not a defect" in seen["user_message"]
+
+    def test_no_mandate_note_without_a_scan(self, monkeypatch, approved):
+        seen = {}
+        monkeypatch.setattr(pa, "run_agent", lambda **kw: seen.update(kw) or {
+            "positions": [], "cash_pct": 100.0, "excluded": [],
+            "concentration_notes": [], "summary": "s",
+        })
+        run_portfolio_agent({"BAC": candidate("BAC", approved("BAC"))}, mandate=None)
+        assert "not a defect" not in seen["user_message"]
+
+
+class TestSummaryReconciliation:
+    """The model writes its narrative before enforcement runs, so a trimmed
+    position leaves prose quoting a size the book no longer holds."""
+
+    @pytest.fixture(autouse=True)
+    def _stub_sector(self, monkeypatch):
+        monkeypatch.setattr(pa, "get_sector_profile", lambda ticker: {"sector": "Financials"})
+
+    def test_summary_flags_that_sizes_were_adjusted(self, monkeypatch, approved):
+        monkeypatch.setattr(pa, "run_agent", lambda **kw: {
+            "positions": [pos("JPM", 50.0), pos("BAC", 25.0)], "cash_pct": 25.0,
+            "excluded": [], "concentration_notes": [], "summary": "JPM earns a 50% core position.",
+        })
+        out = run_portfolio_agent({t: candidate(t, approved(t)) for t in ("JPM", "BAC")})
+        assert out["positions"][0]["allocation_pct"] == MAX_POSITION_PCT
+        assert "Adjusted after submission" in out["summary"]
+
+    def test_untouched_book_keeps_a_clean_summary(self, monkeypatch, approved):
+        monkeypatch.setattr(pa, "run_agent", lambda **kw: {
+            "positions": [pos("JPM", 30.0), pos("BAC", 25.0)], "cash_pct": 45.0,
+            "excluded": [], "concentration_notes": [], "summary": "A measured book.",
+        })
+        out = run_portfolio_agent({t: candidate(t, approved(t)) for t in ("JPM", "BAC")})
+        assert out["adjustments"] == []
+        assert out["summary"] == "A measured book."

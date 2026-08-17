@@ -27,7 +27,7 @@ def stub_agents(monkeypatch):
                             "ticker": ticker or f["ticker"], "verdict": "approved",
                             "hard_veto_triggered": False})
     monkeypatch.setattr(c, "run_portfolio_agent",
-                        lambda results: {"positions": [], "cash_pct": 100.0})
+                        lambda results, mandate=None: {"positions": [], "cash_pct": 100.0})
 
 
 def route(query_type, tickers=(), sector=None):
@@ -167,3 +167,28 @@ class TestEnvelope:
     def test_shape_is_consistent(self, monkeypatch, plan):
         monkeypatch.setattr(c, "classify_query", lambda q: plan)
         assert self.KEYS <= set(c.run_orchestrator("q"))
+
+
+class TestMandatePassing:
+    """The portfolio agent never sees the query. Anything the coordinator
+    knows about the request has to be handed over explicitly -- a sector
+    scan returns one sector by construction, and without being told, the
+    portfolio agent reads that as concentration and declines the book."""
+
+    def _capture(self, monkeypatch):
+        seen = {}
+        monkeypatch.setattr(c, "run_portfolio_agent",
+                            lambda results, mandate=None: seen.update(mandate=mandate) or {})
+        return seen
+
+    def test_sector_scan_passes_its_sector(self, monkeypatch):
+        monkeypatch.setattr(c, "classify_query", lambda q: route("sector_scan", sector="banking"))
+        seen = self._capture(monkeypatch)
+        c.run_orchestrator("find undervalued bank stocks")
+        assert seen["mandate"] == {"query_type": "sector_scan", "sector": "banking"}
+
+    def test_single_ticker_passes_no_sector(self, monkeypatch):
+        monkeypatch.setattr(c, "classify_query", lambda q: route("single_ticker", ["AMD"]))
+        seen = self._capture(monkeypatch)
+        c.run_orchestrator("is AMD a good buy?")
+        assert seen["mandate"] == {"query_type": "single_ticker", "sector": None}

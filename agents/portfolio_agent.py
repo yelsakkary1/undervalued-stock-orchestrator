@@ -309,8 +309,30 @@ def enforce_allocation_rules(portfolio: dict, sector_by_ticker: dict = None) -> 
     return portfolio
 
 
-def run_portfolio_agent(results: dict) -> dict:
-    """Build a portfolio from the per-ticker results the coordinator collected."""
+SECTOR_MANDATE_NOTE = (
+    "This shortlist came from a scan of the {sector} sector, which is what "
+    "the user explicitly asked for. Single-sector exposure is the shape of "
+    "the request, not a defect in the book -- note it plainly, but do not "
+    "treat it as a reason to hold cash. What you are deciding is which of "
+    "these names is worth holding and at what size relative to each other. "
+    "Let cash reflect your conviction in the candidates, not the fact that "
+    "they share a sector.\n\n"
+)
+
+
+def run_portfolio_agent(results: dict, mandate: dict = None) -> dict:
+    """Build a portfolio from the per-ticker results the coordinator collected.
+
+    `mandate` carries what the coordinator knows about the request and this
+    agent otherwise cannot see. A sector scan returns one sector by
+    construction, so without being told, this agent reads its own shortlist
+    as 100% concentrated and declines the entire book -- correct
+    diversification logic applied to a question that was never about
+    diversification. Isolated context is the right default; this is context
+    that has to be handed over deliberately.
+    """
+    sector_scoped = bool(mandate and mandate.get("query_type") == "sector_scan")
+
     eligible, blocked = partition_candidates(results)
 
     if not eligible:
@@ -326,7 +348,11 @@ def run_portfolio_agent(results: dict) -> dict:
             ),
         }
 
-    prompt = (
+    prompt = ""
+    if sector_scoped:
+        prompt += SECTOR_MANDATE_NOTE.format(sector=mandate.get("sector") or "requested")
+
+    prompt += (
         f"Assemble a long-term portfolio from these {len(eligible)} candidate(s).\n\n"
         f"{json.dumps(eligible, indent=2)}\n\n"
     )
@@ -361,7 +387,12 @@ def run_portfolio_agent(results: dict) -> dict:
             print(f"  !! sector lookup failed for {position['ticker']}: {exc}")
             sector_by_ticker[position["ticker"]] = None
 
-    portfolio = enforce_allocation_rules(portfolio, sector_by_ticker)
+    # the sector cap exists to stop a diversified book drifting into one
+    # bet; on a scan the user asked for one sector, so it would only fight
+    # the request and force cash the conviction doesn't call for
+    portfolio = enforce_allocation_rules(
+        portfolio, None if sector_scoped else sector_by_ticker
+    )
     portfolio["adjustments"] = coercion_notes + portfolio["adjustments"]
 
     # the code-side filter is the authority on exclusions, not the model's list
@@ -376,6 +407,16 @@ def run_portfolio_agent(results: dict) -> dict:
         {"ticker": t, "reason": r} for t, r in model_exclusions.items()
     ]
 
+    # the model wrote its narrative before enforcement ran, so a trimmed
+    # position leaves prose quoting a size the book no longer holds -- say so
+    # rather than leaving the reader to reconcile the two
+    if portfolio["adjustments"]:
+        portfolio["summary"] = (
+            f"{portfolio['summary']}\n\n[Adjusted after submission: "
+            f"{len(portfolio['adjustments'])} correction(s) applied by the allocation rules -- "
+            "see `adjustments`. Position sizes quoted above may predate them.]"
+        )
+
     held = {p["ticker"] for p in portfolio["positions"]}
     reinstated = held & set(blocked)
     if reinstated:
@@ -383,7 +424,9 @@ def run_portfolio_agent(results: dict) -> dict:
         portfolio["adjustments"].append(
             f"removed rejected ticker(s) the model tried to hold: {', '.join(sorted(reinstated))}"
         )
-        portfolio = enforce_allocation_rules(portfolio, sector_by_ticker)
+        portfolio = enforce_allocation_rules(
+            portfolio, None if sector_scoped else sector_by_ticker
+        )
 
     return portfolio
 

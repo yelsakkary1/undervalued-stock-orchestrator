@@ -116,6 +116,8 @@ Survivors are tagged with the basis they cleared on, so nothing downstream mista
 
 The portfolio agent reads that tag and sizes relative-basis candidates more conservatively.
 
+A sector scan returns one sector by construction, and the portfolio agent cannot see the query that produced its shortlist. Left uninformed it read its own candidates as 100% sector concentration and declined the entire book — sound diversification logic applied to a question that was never about diversification, and a failure every scan would have hit. The coordinator now passes a `mandate` describing the request, and on a scan the sector cap is waived and single-sector exposure is treated as the shape of the ask rather than a defect. Isolated context is the right default; this is context that has to be handed over deliberately.
+
 The scan gate was only half the problem. The risk critic was independently rejecting candidates on valuation grounds — re-deciding a question the fundamentals agent had already answered, whose verdict was sitting in its own prompt — so names that survived the gate died one stage later for the same reason. Narrowing its remit in the prompt was not enough on its own; see the veto contract in decision 2 for what actually made it hold.
 
 ---
@@ -131,22 +133,28 @@ Tickers in scope: ['NVDA', 'AMD', 'AVGO', 'TSM', 'QCOM', 'INTC']
 
 | Rank | Ticker | Verdict | Score | Basis | Outcome |
 |---:|---|---|---:|---|---|
-| 1 | TSM | fairly_valued | 55 | relative | full analysis → approved_with_caution |
-| 2 | QCOM | fairly_valued | 52 | relative | full analysis → approved_with_caution |
-| 3 | AVGO | fairly_valued | 48 | relative | full analysis → approved_with_caution |
-| 4 | NVDA | overvalued | 28 | relative | screened out |
-| 5 | AMD | overvalued | 22 | relative | screened out |
-| 6 | INTC | overvalued | 15 | relative | screened out |
+| 1 | JPM | fairly_valued | 55 | relative | full analysis → approved_with_caution |
+| 2 | BAC | fairly_valued | 52 | relative | full analysis → approved_with_caution |
+| 3 | C | fairly_valued | 35 | relative | full analysis → approved_with_caution |
+| 4 | WFC | fairly_valued | 35 | relative | screened out |
+| 5 | USB | overvalued | 35 | relative | screened out |
 
 Resulting book:
 
 ```
-QCOM    22.00%  medium   Good technical pullback entry (RSI 49.4), forward P/E 18.5x
-TSM     16.00%  low      Fortress balance sheet, 40% ROE, but extended entry point
-CASH    62.00%
+JPM     35.00%  high     ROE 17.8%, strongest fundamentals of the five
+BAC     25.00%  medium   Acceptable valuation, deteriorating business metrics
+C       10.00%  low      Starter position; weakest of the three
+CASH    30.00%
+
+adjustments: ['JPM: 50.0% trimmed to 35.0% (single-position limit)']
 ```
 
-The 62% cash is the system working. All three candidates cleared on a *relative* basis, the portfolio agent was told so, and it sized accordingly rather than mistaking a shortlist for a bargain.
+The model proposed 50% in JPM; the position cap trimmed it and recorded the trim. Its narrative still quotes the pre-trim figure, so the summary carries a note pointing at `adjustments` rather than leaving the reader to reconcile the two.
+
+The 30% cash is conviction, not diversification: all three cleared on a *relative* basis and all three showed extended entries. The agent said so itself — *"warranted a cash reserve for discipline, not sector avoidance."*
+
+Scores are model judgements and vary run to run; ranks are not stable across invocations.
 
 ---
 
@@ -185,7 +193,7 @@ Defaults to `claude-haiku-4-5`; override with `CLAUDE_MODEL` in `.env`.
 ./venv/bin/python -m pytest
 ```
 
-86 tests, ~0.8s, entirely offline — no API key, no network. The agent loop is driven by a scripted stub client and the data tools are stubbed. A suite that needs a funded API key to tell you whether the allocation maths is right is a suite you stop running.
+95 tests, ~0.5s, entirely offline — no API key, no network. The agent loop is driven by a scripted stub client and the data tools are stubbed. A suite that needs a funded API key to tell you whether the allocation maths is right is a suite you stop running.
 
 Coverage is weighted toward failure paths, because those are the ones you don't notice breaking:
 
