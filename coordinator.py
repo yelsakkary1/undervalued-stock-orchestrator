@@ -169,7 +169,7 @@ def shortlist_for_scan(screened: dict, limit: int = SECTOR_SCAN_SHORTLIST) -> tu
     return ranked[:limit], ranked[limit:]
 
 
-def analyse_candidates(plan: dict, tickers: list) -> dict:
+def analyze_candidates(plan: dict, tickers: list) -> dict:
     """Run the specialist agents over the tickers in scope.
 
     Sector scans funnel: fundamentals screens everything, and only the
@@ -234,7 +234,7 @@ def run_orchestrator(query: str, synthesise: bool = True) -> dict:
     tickers = resolve_tickers(plan)
     print(f"Tickers in scope: {tickers}")
 
-    results = analyse_candidates(plan, tickers)
+    results = analyze_candidates(plan, tickers)
 
     # A risk-only query asked what could go wrong, not what to buy --
     # answering it with an allocation would be answering a different question.
@@ -251,7 +251,7 @@ def run_orchestrator(query: str, synthesise: bool = True) -> dict:
     return {
         "query": query,
         "query_type": plan["query_type"],
-        "tickers_analysed": tickers,
+        "tickers_analyzed": tickers,
         "candidates": results,
         "portfolio": portfolio,
     }

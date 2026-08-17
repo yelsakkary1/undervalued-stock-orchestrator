@@ -17,7 +17,7 @@ allocation and argues for it; enforce_allocation_rules disposes. The
 risk critic's rejections are applied as a hard filter in code before this
 agent is ever invoked -- a veto that a downstream model can talk itself
 out of is not a veto. Same reasoning as the note in risk_critic_agent.py,
-one layer up: advisory judgement stays with the model, anything that must
+one layer up: advisory judgment stays with the model, anything that must
 hold regardless of how persuasive the reasoning sounds goes in Python.
 """
 
@@ -110,7 +110,7 @@ TOOLS = [
 
 SYSTEM_PROMPT = (
     "You are a portfolio manager assembling a long-term position book from "
-    "candidates that have already been analysed. You receive each "
+    "candidates that have already been analyzed. You receive each "
     "candidate's fundamentals, technical and risk verdicts -- their "
     "conclusions, not their reasoning. Candidates already rejected by the "
     "risk critic have been removed before you see them; do not try to "
@@ -140,7 +140,7 @@ SYSTEM_PROMPT = (
 
 
 def partition_candidates(results: dict) -> tuple:
-    """Split analysed tickers into what the portfolio agent may consider
+    """Split analyzed tickers into what the portfolio agent may consider
     and what has already been ruled out before it runs.
 
     Two things get filtered here rather than left to the model: candidates
@@ -180,7 +180,7 @@ def _looks_like_ticker(value) -> bool:
     return isinstance(value, str) and bool(TICKER_PATTERN.match(value.strip()))
 
 
-def normalise_positions(raw) -> tuple:
+def normalize_positions(raw) -> tuple:
     """Coerce the model's positions into the shape the rest of the code expects.
 
     The tool schema asks for objects with a ticker and a size, but a schema
@@ -194,7 +194,7 @@ def normalise_positions(raw) -> tuple:
     """
     positions, notes = [], []
 
-    # A bare string here means the model serialised its positions array as
+    # A bare string here means the model serialized its positions array as
     # JSON text instead of returning an array. Falling through to the loop
     # would iterate it character by character, turning every brace, quote
     # and digit into a "position" -- each of which is then looked up as a
@@ -285,8 +285,8 @@ def ensure_envelope(portfolio: dict) -> dict:
 def enforce_allocation_rules(portfolio: dict, sector_by_ticker: dict = None) -> dict:
     """Apply the constraints that must hold regardless of the model's argument.
 
-    Order matters: normalise to 100 first, then cap. Capping first and
-    renormalising afterwards scales the capped position straight back
+    Order matters: normalize to 100 first, then cap. Capping first and
+    renormalizing afterwards scales the capped position straight back
     through its own limit.
 
     Cap overflow goes to cash rather than being spread across the other
@@ -297,7 +297,7 @@ def enforce_allocation_rules(portfolio: dict, sector_by_ticker: dict = None) -> 
     Every change is recorded in `adjustments`; silently rewriting the
     model's numbers would hide exactly the disagreement worth reading.
     """
-    positions, adjustments = normalise_positions(portfolio.get("positions"))
+    positions, adjustments = normalize_positions(portfolio.get("positions"))
 
     if not positions:
         portfolio["positions"] = []
@@ -305,7 +305,7 @@ def enforce_allocation_rules(portfolio: dict, sector_by_ticker: dict = None) -> 
         portfolio["adjustments"] = adjustments
         return portfolio
 
-    # 1. normalise the proposed book to 100
+    # 1. normalize the proposed book to 100
     cash = max(float(portfolio.get("cash_pct") or 0.0), 0.0)
     proposed = sum(p["allocation_pct"] for p in positions) + cash
 
@@ -317,7 +317,7 @@ def enforce_allocation_rules(portfolio: dict, sector_by_ticker: dict = None) -> 
             for position in positions:
                 position["allocation_pct"] = round(position["allocation_pct"] * scale, 2)
             cash = round(cash * scale, 2)
-        adjustments.append(f"allocations summed to {proposed:.1f}% -- renormalised to 100%")
+        adjustments.append(f"allocations summed to {proposed:.1f}% -- renormalized to 100%")
 
     # 2. single-position cap, overflow to cash
     for position in positions:
@@ -420,7 +420,7 @@ def run_portfolio_agent(results: dict, mandate: dict = None) -> dict:
 
     portfolio = ensure_envelope(portfolio)
 
-    positions, coercion_notes = normalise_positions(portfolio.get("positions"))
+    positions, coercion_notes = normalize_positions(portfolio.get("positions"))
     portfolio["positions"] = positions
 
     sector_by_ticker = {}

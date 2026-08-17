@@ -15,7 +15,7 @@ from agents.portfolio_agent import (
     MAX_SECTOR_PCT,
     ensure_envelope,
     enforce_allocation_rules,
-    normalise_positions,
+    normalize_positions,
     partition_candidates,
     run_portfolio_agent,
 )
@@ -80,28 +80,28 @@ class TestNormalisePositions:
     contract. Every shape below was returned by the live model."""
 
     def test_bare_ticker_strings_are_coerced(self):
-        positions, notes = normalise_positions(["NVDA", "JPM"])
+        positions, notes = normalize_positions(["NVDA", "JPM"])
         assert [p["ticker"] for p in positions] == ["NVDA", "JPM"]
         assert all(p["allocation_pct"] == 0.0 for p in positions)
         assert len(notes) == 2
 
     def test_unparseable_allocation_defaults_to_zero(self):
-        positions, notes = normalise_positions([{"ticker": "X", "allocation_pct": "40%"}])
+        positions, notes = normalize_positions([{"ticker": "X", "allocation_pct": "40%"}])
         assert positions[0]["allocation_pct"] == 0.0
         assert "unparseable" in notes[0]
 
     def test_entries_without_a_ticker_are_discarded(self):
-        positions, notes = normalise_positions([{"nope": 1}, 42, None])
+        positions, notes = normalize_positions([{"nope": 1}, 42, None])
         assert positions == []
         assert len(notes) == 3
 
     def test_missing_optional_fields_are_filled(self):
-        positions, _ = normalise_positions([{"ticker": "X", "allocation_pct": 10}])
+        positions, _ = normalize_positions([{"ticker": "X", "allocation_pct": 10}])
         assert positions[0]["conviction"] == "low"
         assert positions[0]["key_risks"] == []
 
     def test_negative_allocations_are_floored_at_zero(self):
-        positions, _ = normalise_positions([{"ticker": "X", "allocation_pct": -5}])
+        positions, _ = normalize_positions([{"ticker": "X", "allocation_pct": -5}])
         assert positions[0]["allocation_pct"] == 0.0
 
 
@@ -132,8 +132,8 @@ class TestAllocationRules:
         assert max(p["allocation_pct"] for p in out["positions"]) <= MAX_POSITION_PCT
         assert total(out) == 100.0
 
-    def test_cap_survives_renormalisation(self):
-        """Regression: capping before renormalising scaled the capped
+    def test_cap_survives_renormalization(self):
+        """Regression: capping before renormalizing scaled the capped
         position straight back through its own limit (70 -> 35 -> 53.85)."""
         out = enforce_allocation_rules(book([pos("AAA", 70.0), pos("BBB", 30.0)]))
         assert out["positions"][0]["allocation_pct"] == MAX_POSITION_PCT
@@ -158,7 +158,7 @@ class TestAllocationRules:
     def test_unknown_sector_is_not_capped(self):
         """Missing sector data must not silently trim a legitimate book.
 
-        These three sum to 90 with no cash, so renormalisation still runs --
+        These three sum to 90 with no cash, so renormalization still runs --
         what must not happen is a sector trim on top of it.
         """
         out = enforce_allocation_rules(
@@ -308,7 +308,7 @@ class TestSummaryReconciliation:
 
 
 class TestPositionsAsAString:
-    """The model serialised its positions array as JSON text instead of
+    """The model serialized its positions array as JSON text instead of
     returning an array. The loop then walked the string character by
     character, turning every brace, quote and digit into a "position" --
     each looked up as a ticker against a live API. ~150 bogus HTTP calls."""
@@ -316,28 +316,28 @@ class TestPositionsAsAString:
     JSON_TEXT = '[{"ticker": "JPM", "allocation_pct": 35, "conviction": "high", "thesis": "x", "key_risks": []}]'
 
     def test_a_json_string_is_parsed_not_iterated(self):
-        positions, notes = normalise_positions(self.JSON_TEXT)
+        positions, notes = normalize_positions(self.JSON_TEXT)
         assert [p["ticker"] for p in positions] == ["JPM"]
         assert any("JSON string" in n for n in notes)
 
     def test_no_single_character_positions_survive(self):
         """The signature of the bug: tickers like '{', '"', ':' , '1'."""
-        positions, _ = normalise_positions(self.JSON_TEXT)
+        positions, _ = normalize_positions(self.JSON_TEXT)
         assert not any(len(p["ticker"]) == 1 for p in positions)
 
     def test_unparseable_string_yields_nothing(self):
-        positions, notes = normalise_positions("not json at all, just prose")
+        positions, notes = normalize_positions("not json at all, just prose")
         assert positions == []
         assert any("unparseable" in n for n in notes)
 
     @pytest.mark.parametrize("raw", [42, 3.5, True, {"ticker": "JPM"}])
     def test_non_list_payloads_are_discarded(self, raw):
-        positions, notes = normalise_positions(raw)
+        positions, notes = normalize_positions(raw)
         assert positions == []
         assert notes
 
     def test_none_is_simply_empty(self):
-        assert normalise_positions(None) == ([], [])
+        assert normalize_positions(None) == ([], [])
 
 
 class TestTickerPlausibility:
@@ -345,19 +345,19 @@ class TestTickerPlausibility:
 
     @pytest.mark.parametrize("junk", ["{", '"', ":", ",", "1", "%", ";", "", "   ", "\n"])
     def test_garbage_never_becomes_a_position(self, junk):
-        positions, notes = normalise_positions([junk])
+        positions, notes = normalize_positions([junk])
         assert positions == []
         assert notes
 
     @pytest.mark.parametrize("junk", ["{", "%", "1"])
     def test_garbage_in_a_dict_is_dropped_too(self, junk):
-        positions, notes = normalise_positions([{"ticker": junk, "allocation_pct": 10}])
+        positions, notes = normalize_positions([{"ticker": junk, "allocation_pct": 10}])
         assert positions == []
         assert any("implausible" in n for n in notes)
 
     @pytest.mark.parametrize("ticker", ["JPM", "BAC", "BRK.B", "RDS-A", "F", "GOOGL"])
     def test_real_tickers_pass(self, ticker):
-        positions, _ = normalise_positions([{"ticker": ticker, "allocation_pct": 10}])
+        positions, _ = normalize_positions([{"ticker": ticker, "allocation_pct": 10}])
         assert [p["ticker"] for p in positions] == [ticker]
 
 

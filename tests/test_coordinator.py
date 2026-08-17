@@ -2,8 +2,8 @@
 Tests for the coordinator's routing and screening decisions.
 
 The specialist agents are stubbed throughout. What's under test is the
-coordinator's own judgement -- which subagents to invoke, which candidates
-survive a scan -- not whether Claude analyses a stock well.
+coordinator's own judgment -- which subagents to invoke, which candidates
+survive a scan -- not whether Claude analyzes a stock well.
 """
 
 import pytest
