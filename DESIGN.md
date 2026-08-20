@@ -25,8 +25,8 @@ I started out writing the rules into the prompts. Then I watched the model break
 None of this is caution for its own sake. Each row is there because I watched the model do something it was told not to:
 
 - it sent back a list of ticker symbols where it was supposed to send full positions with sizes
-- it left out a field the schema marked as required
-- it tried to hold a stock the risk reviewer had already rejected
+- it left out a field it had been told was required
+- it tried to hold a stock the risk critic had already rejected
 - it sent the whole list of positions as one block of text instead of as a list
 - it rejected a stock for being expensive, and flagged that as a severe problem
 
@@ -44,17 +44,17 @@ What I took from it: check what comes in before you act on it, not after.
 
 ### The veto that was not a veto
 
-The risk reviewer's instructions say, in plain English, that a stock being expensive is worth flagging but is never on its own a reason to reject it, and that the severe flag is reserved for a company that might not survive, restated accounts, a broken debt agreement, or legal action.
+The risk critic's instructions say, in plain English, that a stock being expensive is worth flagging but is never on its own a reason to reject it, and that the severe flag is reserved for a company that might not survive, restated accounts, a broken debt agreement, or legal action.
 
 It rejected AMD anyway. The reasons it gave were a 129x price to earnings ratio, weak cash generation and high volatility. None of those is a question about whether the company survives, and all of them were things the fundamentals agent had already accounted for when it called the stock overvalued. The same objection got counted twice, the second time at the level that kills a stock outright. An hour earlier, working from the same instructions, it had handled three other stocks correctly.
 
-Asking more firmly was never going to fix that. The reviewer now has to name which specific problem justifies a rejection, picked from a fixed list. If it names none and rejects anyway, `enforce_veto_contract` downgrades the rejection to a caution, keeps the reasons it gave as flags, and records the override:
+Asking more firmly was never going to fix that. The critic now has to name which specific problem justifies a rejection, picked from a fixed list. If it names none and rejects anyway, `enforce_veto_contract` downgrades the rejection to a caution, keeps the reasons it gave as flags, and records the override:
 
 ```json
 "overrides": ["rejection downgraded to approved_with_caution: no solvency-grade cause named (veto_category='none'). Stated reasons kept as risk flags."]
 ```
 
-The model still decides whether a serious problem exists. It just cannot spend a rejection without saying which one. The concern still reaches the portfolio stage, where it gets sized down instead of being thrown out upstream.
+The model still decides whether a serious problem exists. It just cannot spend a rejection without saying which one. The concern still reaches the portfolio stage, where it gets sized down instead of being thrown out a step earlier.
 
 Telling a model what shape its answer has to take is a strong request. It is not a guarantee.
 
@@ -64,19 +64,19 @@ Another issue I came across was that when I asked the system to find undervalued
 
 It's like asking my friends who has the fastest car and they come back saying all our cars do 0-60 in under 5 seconds. It's a useful insight, but it still doesn't answer my question.
 
-The gate was a single condition: a ticker went through only if fundamentals returned `undervalued`. Against live data it rejected 11 of 11 tickers across two sectors. Strictness was not the problem. The coordinator had decomposed a broad research task so narrowly that the broad task got no coverage at all.
+The bar was one line of code: a stock went through only if the fundamentals agent called it undervalued. Run against real prices, that rejected all 11 stocks across two sectors. The bar was not too high. It was the wrong kind of test. I had asked a question about which stocks were best and answered it with a test that only knows good from bad.
 
-The fix came in two parts. The fundamentals agent now emits a `valuation_score` alongside its verdict, since a three-way enum flattens exactly the gradation that "least expensive of a rich sector" depends on. The coordinator ranks candidates on `(verdict tier, score)` and carries the top 3 forward.
+The fix came in two parts. The fundamentals agent now gives a score out of 100 as well as its verdict, because three options are not enough to say "the cheapest of an expensive bunch". The coordinator sorts on the verdict first and the score second, and takes the top three.
 
-Survivors carry the basis they cleared on:
+The three that go through carry a note saying how they got there:
 
 ```json
 "screen": { "basis": "relative", "sector_rank": 1, "of": 6 }
 ```
 
-The portfolio agent reads that tag and sizes relative-basis candidates more conservatively.
+The portfolio agent reads that and gives those stocks smaller positions than it would give something genuinely cheap.
 
-The scan gate turned out to be only half the problem. The risk critic was independently killing candidates on valuation grounds, re-deciding a question the fundamentals agent had already settled and whose verdict was sitting in its own prompt. Names that survived the gate died one stage later for the same reason. Narrowing its remit in the prompt was not enough on its own, which is what led to the veto contract above.
+The bar turned out to be only half the problem. The risk critic was separately killing stocks for being expensive, re-deciding something the fundamentals agent had already settled and whose verdict was sitting right there in its prompt. Names that got past the bar died one step later for the same reason. Telling it to stay off valuation was not enough on its own, which is what led to the veto contract above.
 
 ## 4. Isolated context still has to be handed over
 
