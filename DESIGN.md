@@ -12,51 +12,51 @@ Give a critic the full chain of thought behind a conclusion and it tends to foll
 
 ## 2. The model proposes, code disposes
 
-Advisory judgment belongs to the model. Anything that has to hold regardless of how convincing the model's reasoning sounds belongs in Python.
+I started out writing the rules into the prompts. Then I watched the model break them. Now anything that has to hold every single time is checked in code, and the prompt only covers the parts where I actually want the model using its judgment.
 
-| Enforced in code | Left to the model |
+| Checked in code | Left to the model |
 |---|---|
-| A rejection requires a named solvency-grade cause | Whether such a cause exists |
-| Risk-critic vetoes filter candidates before the portfolio agent runs | Which names to hold |
-| Position cap (35%), sector cap (60%) | Position sizing within the caps |
-| Allocations always total 100% | How much cash to carry |
-| Rejected tickers stripped if reinstated | The thesis for each holding |
+| A rejection has to name a specific serious problem | Whether such a problem exists |
+| Rejected stocks are removed before the portfolio agent runs | Which stocks to hold |
+| No position over 35%, no sector over 60% | How big each position is, within those limits |
+| Positions and cash always add up to 100% | How much cash to sit on |
+| A rejected stock is stripped out if it reappears | The reasoning behind each holding |
 
-This split is not defensive habit. It comes from things I watched the models actually do against the live API:
+None of this is caution for its own sake. Each row is there because I watched the model do something it was told not to:
 
-- the portfolio agent returned `positions` as bare ticker strings instead of objects
-- it omitted `concentration_notes` even though the schema marks it required
-- it listed a risk-rejected ticker among its holdings
-- it serialized `positions` as a JSON *string* instead of an array
-- the risk critic rejected a candidate on valuation grounds with `hard_veto_triggered` set
+- it sent back a list of ticker symbols where it was supposed to send full positions with sizes
+- it left out a field the schema marked as required
+- it tried to hold a stock the risk reviewer had already rejected
+- it sent the whole list of positions as one block of text instead of as a list
+- it rejected a stock for being expensive, and flagged that as a severe problem
 
-Every correction the code makes gets recorded in `adjustments` instead of being applied quietly, because a rewritten allocation you cannot see is worse than one you can argue with.
+When the code overrides the model, it writes down what it changed. A portfolio that got quietly rewritten is worse than one you can disagree with.
 
-### The stringified payload
+### The one that cost me 150 requests
 
-This one is worth separating from the others, because the damage was not a bad answer. It was a bad action.
+This one is different from the others. The rest gave me a wrong answer. This one made my code go and do something.
 
-`normalize_positions` checked whether each *entry* was a string. It never checked whether the payload itself was one. So when the model handed back its positions array as JSON text, `for entry in raw` walked the string character by character. Every brace, quote, colon and digit became a "position", and each of those was then sent to Yahoo Finance as a ticker lookup. One malformed field produced roughly 150 failed HTTP requests for symbols like `{`, `%` and `;`.
+The model sent its list of positions as one long block of text instead of as an actual list. My code was checking whether each item in a list was text, but never checked whether the whole thing was. So it walked through that block one character at a time, treated every bracket, quote and digit as a stock, and looked each one up on Yahoo Finance. About 150 failed requests, for tickers named `{`, `%` and `;`.
 
-The fix has two halves, because the failure did. A string payload is now parsed back into a list where possible and discarded with a note where not, and any other non-list type is rejected outright. Separately, every symbol is screened against a plausibility pattern before it reaches the network, so no future malformation can turn one bad field into a hundred requests.
+Two fixes, because there were two problems. A block of text now gets read back into a list where that works, and thrown out with a note where it does not. And every symbol gets checked against what a ticker can plausibly look like before anything touches the network.
 
-The lesson I took from it: validate at the boundary, not after the side effects have already fired.
+What I took from it: check what comes in before you act on it, not after.
 
 ### The veto that was not a veto
 
-The risk critic's prompt says, in plain language, that a rich multiple is a flag and never a rejection, and that `hard_veto_triggered` is reserved for going-concern language, restatements, covenant breaches and legal action.
+The risk reviewer's instructions say, in plain English, that a stock being expensive is worth flagging but is never on its own a reason to reject it, and that the severe flag is reserved for a company that might not survive, restated accounts, a broken debt agreement, or legal action.
 
-It rejected AMD anyway. The stated grounds were a 129x P/E, a low FCF yield and high beta. None of those is a solvency question, and all of them were concerns the fundamentals agent had already folded into an `overvalued` verdict. The same objection got counted twice, the second time at the severity that stops a candidate dead. An hour earlier, on the identical prompt, the same agent had produced three perfectly correct `approved_with_caution` verdicts during a sector scan.
+It rejected AMD anyway. The reasons it gave were a 129x price to earnings ratio, weak cash generation and high volatility. None of those is a question about whether the company survives, and all of them were things the fundamentals agent had already accounted for when it called the stock overvalued. The same objection got counted twice, the second time at the level that kills a stock outright. An hour earlier, working from the same instructions, it had handled three other stocks correctly.
 
-Asking more firmly was never going to fix that. `submit_risk_assessment` now requires a `veto_category` naming which solvency-grade problem applies, and `enforce_veto_contract` downgrades any rejection categorized `none` to `approved_with_caution`. The stated reasons survive as risk flags, and the override is recorded:
+Asking more firmly was never going to fix that. The reviewer now has to name which specific problem justifies a rejection, picked from a fixed list. If it names none and rejects anyway, `enforce_veto_contract` downgrades the rejection to a caution, keeps the reasons it gave as flags, and records the override:
 
 ```json
 "overrides": ["rejection downgraded to approved_with_caution: no solvency-grade cause named (veto_category='none'). Stated reasons kept as risk flags."]
 ```
 
-The model still decides whether a solvency-grade problem exists. It just cannot spend a veto without naming one. The signal now reaches the portfolio stage to be sized down instead of being destroyed upstream.
+The model still decides whether a serious problem exists. It just cannot spend a rejection without saying which one. The concern still reaches the portfolio stage, where it gets sized down instead of being thrown out upstream.
 
-I keep coming back to the same conclusion here. A schema is a strong instruction, not an enforced contract.
+Telling a model what shape its answer has to take is a strong request. It is not a guarantee.
 
 ## 3. A comparative question needs a comparative gate
 

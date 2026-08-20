@@ -12,12 +12,12 @@ directly) -- this is what lets the coordinator skip fundamentals/
 technical entirely for a pure "what are the risks with X" query, instead
 of running unnecessary analysis just to answer a risk question.
 
-Note: this veto is model-judged, not a hard programmatic gate. That's the
-right call here because the output is advisory -- a human reviews it
-before anything happens with real money. If this system ever executed
-trades directly instead of just recommending them, that's exactly the
-point where a hard hook/gate (Project 2's territory) would be required
-instead of an agent's judgment call.
+Note: the model still decides whether a candidate is risky, but it cannot
+reject one without naming which serious problem applies. Rejections that
+name none get downgraded by enforce_veto_contract below. The output is
+advisory either way -- a human reads it before anything happens with real
+money. If this ever placed trades directly, far more of this judgment
+would have to move out of the prompt and into code.
 """
 
 import json
