@@ -76,28 +76,30 @@ Routing plan: {'query_type': 'sector_scan', 'sector': 'banking', 'tickers': []}
 Tickers in scope: ['JPM', 'BAC', 'WFC', 'C', 'USB']
 ```
 
-| Rank | Ticker | Verdict | Score | Basis | Outcome |
-|---:|---|---|---:|---|---|
-| 1 | JPM | fairly_valued | 55 | relative | full analysis, approved_with_caution |
-| 2 | BAC | fairly_valued | 52 | relative | full analysis, approved_with_caution |
-| 3 | C | fairly_valued | 35 | relative | full analysis, approved_with_caution |
-| 4 | WFC | fairly_valued | 35 | relative | screened out |
-| 5 | USB | overvalued | 35 | relative | screened out |
+| Rank | Ticker | Company | Verdict | Score | Outcome |
+|---:|---|---|---|---:|---|
+| 1 | JPM | JPMorgan Chase | fairly_valued | 55 | full analysis, approved with caution |
+| 2 | BAC | Bank of America | fairly_valued | 52 | full analysis, approved with caution |
+| 3 | C | Citigroup | fairly_valued | 35 | full analysis, approved with caution |
+| 4 | WFC | Wells Fargo | fairly_valued | 35 | screened out |
+| 5 | USB | U.S. Bancorp | overvalued | 35 | screened out |
+
+The three that went through cleared on a *relative* basis, meaning they were the best of the five rather than cheap in absolute terms. The system tags that, so nothing downstream reads "best available" as "a bargain".
 
 Resulting book:
 
 ```
-JPM     35.00%  high     ROE 17.8%, strongest fundamentals of the five
-BAC     25.00%  medium   Acceptable valuation, deteriorating business metrics
-C       10.00%  low      Starter position, weakest of the three
-CASH    30.00%
+JPMorgan Chase    35.00%  high     ROE 17.8%, strongest fundamentals of the five
+Bank of America   25.00%  medium   Acceptable valuation, deteriorating metrics
+Citigroup         10.00%  low      Starter position, weakest of the three
+CASH              30.00%
 
 adjustments: ['JPM: 50.0% trimmed to 35.0% (single-position limit)']
 ```
 
 The model proposed 50% in JPM and the position cap trimmed it, recording the trim. Its written thesis still quotes the pre-trim figure, so the summary carries a note pointing at `adjustments`.
 
-All three names cleared on a *relative* basis and all three showed extended entries, which is where the 30% cash comes from. The agent put it better than I would: *"warranted a cash reserve for discipline, not sector avoidance."*
+All three showed extended entries, which is where the 30% cash comes from. The agent put it better than I would: *"warranted a cash reserve for discipline, not sector avoidance."*
 
 Scores are model judgments, so they move between runs. Ranks are not stable across invocations.
 
