@@ -4,9 +4,13 @@ A multi-agent stock research system built on the raw Anthropic Messages API, wit
 
 A coordinator classifies the incoming query, works out which specialist agents actually need to run, and hands their verdicts to a portfolio agent that turns them into an allocation.
 
-I built this to learn agentic orchestration properly, by hand, before reaching for a framework. The stock picking is the excuse. What I was actually after was the architecture: what each agent is allowed to see, where model judgment stops and code enforcement starts, and how a coordinator can slice a question so thin that it ends up answering nothing.
+I built this to learn agentic orchestration properly before reaching for a framework. I wanted to focus on the architecture. For example, what each agent is allowed to see, where model judgment stops and code enforcement starts, and how a coordinator can break a question up so narrowly that it ends up answering nothing.
 
 Design reasoning lives in [DESIGN.md](DESIGN.md), including the three bugs that taught me the most.
+
+## Domain selection
+
+Before building this harness, I wanted a domain with a valuable use case for a lot of people, and one I understood well enough to judge whether the output was any good. Financial literacy is in the interest of many people, so I thought this would be helpful. Different investors have different strategies. One that tends to be fruitful is finding stocks that are undervalued. That means researching a lot of stocks and reviewing various key metrics, which is time consuming. Each metric tells part of the story. Combining them gives an interpretation. So I thought, what if I could build a system that gives a verdict?
 
 ## Architecture
 

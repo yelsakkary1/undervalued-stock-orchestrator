@@ -4,7 +4,9 @@ Why the system is shaped the way it is, and what running it against live data ta
 
 ## 1. The risk critic sees conclusions, not reasoning
 
-The risk critic receives the fundamentals and technical agents' structured verdicts. It does not receive their reasoning trails, and that is deliberate.
+The risk critic receives the fundamentals and technical agents' structured verdicts. It does not receive their reasoning trails, and that is intentional.
+
+What I noticed during evaluation is that the critic could be biased just like humans. If someone asks my opinion before I have heard anyone else's, my take is my own. If I hear their side first, I end up measuring my verdict against theirs and refining it, even when I don't mean to.
 
 Give a critic the full chain of thought behind a conclusion and it tends to follow that chain rather than test it. Give it only the conclusion and it has to form its own view. I wanted the second behavior, so the coordinator passes verdicts and nothing else.
 
@@ -58,13 +60,15 @@ I keep coming back to the same conclusion here. A schema is a strong instruction
 
 ## 3. A comparative question needs a comparative gate
 
-The sector scan originally let a ticker through only if fundamentals returned `undervalued`. Against live data that gate rejected 11 of 11 tickers across two sectors, and every scan came back with an empty portfolio.
+Another issue I came across was that when I asked the system to find undervalued stocks in a sector, it struggled to return any, even though it had carried out a full analysis on every name. The reason was that I was testing each stock against an absolute bar instead of against the others. I replaced that bar with a ranking, so a sector run always comes back with a shortlist I can act on.
 
-Strictness was not the problem. "Find me undervalued semiconductors" is a comparative question, and I was answering it with a bar set in isolation. The coordinator had decomposed a broad research task so narrowly that the broad task got no coverage at all.
+It's like asking my friends who has the fastest car and they come back saying all our cars do 0-60 in under 5 seconds. It's a useful insight, but it still doesn't answer my question.
 
-The fix came in two parts. The fundamentals agent now emits a `valuation_score` alongside its verdict, since a three-way enum flattens exactly the gradation that "least expensive of a rich sector" depends on. The coordinator ranks candidates on `(verdict tier, score)` and carries the top 3 forward, which always produces something to look at.
+The gate was a single condition: a ticker went through only if fundamentals returned `undervalued`. Against live data it rejected 11 of 11 tickers across two sectors. Strictness was not the problem. The coordinator had decomposed a broad research task so narrowly that the broad task got no coverage at all.
 
-Survivors carry the basis they cleared on, so nothing downstream confuses *best available* with *cheap*:
+The fix came in two parts. The fundamentals agent now emits a `valuation_score` alongside its verdict, since a three-way enum flattens exactly the gradation that "least expensive of a rich sector" depends on. The coordinator ranks candidates on `(verdict tier, score)` and carries the top 3 forward.
+
+Survivors carry the basis they cleared on:
 
 ```json
 "screen": { "basis": "relative", "sector_rank": 1, "of": 6 }
@@ -76,9 +80,11 @@ The scan gate turned out to be only half the problem. The risk critic was indepe
 
 ## 4. Isolated context still has to be handed over
 
-A sector scan returns one sector by construction, and the portfolio agent cannot see the query that produced its shortlist.
+One thing I learned through investing is that diversification has to be a key habit, to prevent overexposure to one sector or asset class in case that sector dips. So I put a 60% sector cap in the code.
 
-Left uninformed, it read its own candidates as 100% sector concentration and declined the entire book. The diversification logic was sound. It was being applied to a question that was never about diversification, and every scan would have hit it: ask for bank stocks, get bank stocks, then hold none of them for being all banks.
+Testing the system, I figured out that the portfolio agent was refusing to hold stocks for the wrong reason. It gave a no-buy verdict on several names just because they all belonged to the same sector and breached that 60% rule, not because they had red flags.
+
+Two things had to be true at once for that to happen. A sector scan returns one sector by construction, and the portfolio agent cannot see the query that produced its shortlist. Left uninformed, it read its own candidates as 100% sector concentration and declined the entire book. The diversification logic was sound. It was being applied to a question that was never about diversification, and every scan would have hit it: ask for bank stocks, get bank stocks, then hold none of them for being all banks.
 
 The coordinator now passes a `mandate` describing the request. On a scan the model is told that single-sector exposure is the shape of the ask rather than a defect, and the code-side sector cap is waived, since that cap exists to stop a diversified book drifting into one bet.
 
