@@ -54,16 +54,18 @@ Every agent builds its message history from scratch. Nothing is inherited, so an
 
 ## Routing
 
-Not every query needs every agent, so the coordinator classifies first and spends accordingly.
+Not every question needs every agent, so the coordinator works out what to run before it runs anything.
 
-| Query type | Path | Cost |
+| What you ask | What runs | Agents used |
 |---|---|---|
-| `vague` | ask which ticker or sector was meant | 1 call, no agents |
-| `risk_only` | risk critic only | 1 agent per ticker |
-| `sector_scan` | fundamentals on all, top 3 through to technical + risk, then portfolio | N + 3×2 + 1 |
-| `single_ticker` | full deep dive, then portfolio | 3 per ticker + 1 |
+| "What should I invest in?" | It asks which company or sector you meant | none |
+| "What are the risks with INTC?" | Risk review on its own | 1 |
+| "Is AMD a good long-term buy?" | Full analysis, then a portfolio | 4 |
+| "Find me undervalued bank stocks" | All five names screened, top three get the full treatment, then a portfolio | 12 |
 
-A pure risk question skips fundamentals and technical completely, and never builds a portfolio. It asked what could go wrong, not what to buy.
+A pure risk question skips valuation and trend work completely, and never builds a portfolio. It asked what could go wrong, not what to buy.
+
+Each agent listed above is one full reasoning loop, so it usually costs several API calls rather than one. Internally these routes are named `vague`, `risk_only`, `single_ticker` and `sector_scan`, which is what appears in the output.
 
 ## Example
 
