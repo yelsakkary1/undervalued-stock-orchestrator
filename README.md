@@ -16,25 +16,25 @@ Before building this harness, I wanted a domain with a valuable use case for a l
 
 ```mermaid
 flowchart TB
-    Q["user query"] --> CL{"classify_query<br/><i>forced tool call</i>"}
+    Q["your question"] --> CL{"classify the question"}
 
-    CL -->|vague| ASK["ask for clarification<br/><i>0 agents run</i>"]
-    CL -->|risk_only| RO["risk critic alone"]
-    CL -->|sector_scan| SCAN["fundamentals × N"]
-    CL -->|single_ticker| DIVE
+    CL -->|no company named| ASK["ask which one<br/><i>nothing analyzed</i>"]
+    CL -->|what could go wrong| RO["risk review only"]
+    CL -->|a whole sector| SCAN["screen every name<br/><i>valuation and health</i>"]
+    CL -->|one company| DIVE
 
-    SCAN --> RANK{"shortlist_for_scan<br/><i>rank, keep top 3</i>"}
-    RANK -->|top 3| DIVE["fundamentals + technical"]
-    RANK -->|rest| DROP["screened out"]
+    SCAN --> RANK{"rank them<br/><i>keep the top 3</i>"}
+    RANK -->|top 3| DIVE["full analysis<br/><i>fundamentals + technical</i>"]
+    RANK -->|the rest| DROP["set aside"]
 
-    DIVE --> RISK["risk critic<br/><i>conclusions only</i>"]
-    RISK --> GATE{"partition_candidates<br/><i>veto enforced in code</i>"}
+    DIVE --> RISK["risk review<br/><i>sees conclusions only</i>"]
+    RISK --> GATE{"drop rejected names"}
 
-    GATE -->|blocked| DROP
-    GATE -->|eligible| PORT["portfolio agent<br/><i>+ get_sector_profile</i>"]
-    PORT --> RULES["enforce_allocation_rules<br/><i>caps, normalize</i>"]
+    GATE -->|rejected| DROP
+    GATE -->|cleared| PORT["build the portfolio<br/><i>sizing and concentration</i>"]
+    PORT --> RULES["apply position limits<br/><i>caps, totals 100%</i>"]
 
-    RO --> OUT["result envelope"]
+    RO --> OUT["answer"]
     ASK --> OUT
     DROP --> OUT
     RULES --> OUT
