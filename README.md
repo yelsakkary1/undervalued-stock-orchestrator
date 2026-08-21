@@ -147,10 +147,27 @@ Coverage leans heavily toward failure paths, since those are the ones that break
 - **`test_risk_critic.py`** covers the veto contract, checking that unjustified rejections are downgraded and genuine ones survive
 - **`test_coordinator.py`** covers routing decisions, shortlist ranking, envelope consistency
 
+## Walkthrough notebook
+
+`walkthrough.ipynb` runs one question through the system a stage at a time, so
+you can watch where the decisions happen rather than just read the final
+answer. It imports the real modules and calls them the way `coordinator.py`
+does, so nothing in it is a reimplementation.
+
+It ships unexecuted. Run it to fill it in:
+
+```bash
+./venv/bin/jupyter nbconvert --to notebook --execute --inplace \
+  --ExecutePreprocessor.timeout=1200 walkthrough.ipynb
+```
+
+That is roughly a dozen agent calls and a few minutes against the live API.
+
 ## Layout
 
 ```
 coordinator.py              routing, funnel, orchestration
+walkthrough.ipynb           one run, stepped through
 agents/
   agent_loop.py             shared tool-use loop
   fundamentals_agent.py     valuation and financial health
